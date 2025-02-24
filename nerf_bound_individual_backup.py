@@ -530,7 +530,7 @@ if __name__ == "__main__":
     focal_y = torch.Tensor(focal).to(device)
 
     near, far = 2.0, 6.0
-    distance_to_infinity=1e0
+    distance_to_infinity=1e2
     n_samples = 32
     perturb = False#True 
     inverse_depth = False
@@ -630,7 +630,7 @@ if __name__ == "__main__":
             #print("Upper bounds: ", ub)
             # print('bound:',lb.view(-1).min(),ub.view(-1).max())
 
-            print('bound:',torch.min(lb,dim=0),torch.max(ub,dim=0))
+            #print('bound:',torch.min(lb,dim=0),torch.max(ub,dim=0))
 
 
             # Establish the whole image by composing every tile
