@@ -161,10 +161,23 @@ class TestModel(nn.Module):
         self.fine_model=fine_model 
 
         self.raw_noise_std=raw_noise_std
-        self.noise_rand=torch.randn((end_height-start_height)*(end_width-start_width),n_samples) * raw_noise_std
+        if (start_height is None) or (end_height is None) or (start_width is None) or (end_width is None):
+            self.noise_rand=None
+        else:
+            self.noise_rand=torch.randn((end_height-start_height)*(end_width-start_width),n_samples) * raw_noise_std
 
 
         self.print_flag=print_flag
+
+    def update_height_and_width(self,start_height,end_height,start_width,end_width):
+        self.start_height=start_height
+        self.end_height=end_height
+        self.start_width=start_width
+        self.end_width=end_width
+        if (start_height is None) or (end_height is None) or (start_width is None) or (end_width is None):
+            self.noise_rand=None
+        else:
+            self.noise_rand=torch.randn((end_height-start_height)*(end_width-start_width),n_samples) * raw_noise_std
 
     def get_rays(
         self, c2w: torch.Tensor
@@ -524,13 +537,13 @@ if __name__ == "__main__":
     testimg = torch.Tensor(testimg).to(device)
     testpose = torch.Tensor(testpose).to(device)
     total_height, total_width = testimg.shape[:2]
-    tile_height,tile_width=2, 2
+    tile_height,tile_width=3, 3
     #height,width=torch.Tensor(height).to(device),torch.Tensor(width).to(device)
     focal_x = torch.Tensor(focal).to(device)
     focal_y = torch.Tensor(focal).to(device)
 
-    near, far = 2.0, 6.0
-    distance_to_infinity=1e2
+    near, far = 2.0, 5.0
+    distance_to_infinity=1e1
     n_samples = 32
     perturb = False#True 
     inverse_depth = False
@@ -555,8 +568,8 @@ if __name__ == "__main__":
     raw_noise_std=0.0
     print_flag=False#True
     visual_flag=False#True
-    start_vis_height,end_vis_height=49,50
-    start_vis_width,end_vis_width=0,1
+    start_vis_height,end_vis_height=42,42+1
+    start_vis_width,end_vis_width=57,57+1
     eps=0.003
 
     image_lb=np.zeros((total_height,total_width,3))
@@ -591,6 +604,13 @@ if __name__ == "__main__":
     fine_model.load_state_dict(torch.load(os.path.join(script_dir, './nerf-fine_10000.pt')))
     fine_model.to(device)
 
+    ray_model=TestModel(total_height,total_width,None,None,None,None,focal_x,focal_y,\
+                        near,far,distance_to_infinity,n_samples,perturb,inverse_depth,\
+                        kwargs_sample_stratified,n_samples_hierarchical,kwargs_sample_hierarchical,chunksize,\
+                        encode,encode_viewdirs,coarse_model,fine_model,\
+                        raw_noise_std,print_flag
+                        )
+
     start_time=time.time()
 
     # for start_height in range(0,total_height,tile_height):
@@ -608,12 +628,8 @@ if __name__ == "__main__":
             #start_height,start_width=56,56
             #end_height,end_width=60,60
             
-            ray_model=TestModel(total_height,total_width,start_height,start_width,end_height,end_width,focal_x,focal_y,\
-                                near,far,distance_to_infinity,n_samples,perturb,inverse_depth,\
-                                kwargs_sample_stratified,n_samples_hierarchical,kwargs_sample_hierarchical,chunksize,\
-                                encode,encode_viewdirs,coarse_model,fine_model,\
-                                raw_noise_std,print_flag
-                                )
+            ray_model.update_height_and_width(start_height,end_height,start_width,end_width)
+            
             inputpose=testpose.repeat((end_height-start_height)*(end_width-start_width),1,1)
             exp=ray_model.forward(inputpose)
 
