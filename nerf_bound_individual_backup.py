@@ -345,11 +345,15 @@ class TestModel(nn.Module):
         return transmittance
     
     def get_rgb_map(self,alpha:torch.Tensor, rgb:torch.Tensor)-> torch.Tensor:
-        rgb_map=torch.zeros_like(alpha[...,None, 0]).to(alpha.device)
+        tmp =torch.zeros_like(alpha[...,None, 0]).to(alpha.device)
         for i in reversed(range(self.n_samples)):
             #print('shapes:',alpha[..., None,i].shape,rgb[...,i, :].shape)
-            rgb_map=alpha[..., None, i]*rgb[...,i, :]+(1-alpha[...,None, i])*rgb_map
+            tmp=alpha[..., None, i]*rgb[...,i, :]+(1-alpha[...,None, i])*tmp
+            # tmp=alpha[..., None, i]*(rgb[...,i, :]-tmp)+tmp
+            tmp=torch.clamp(tmp,min=0.0,max=1.0)
+        #tmp=torch.clamp(tmp,min=0.001,max=0.999)
         
+        rgb_map=tmp
         return rgb_map    
     
     def get_depth_map(self,alpha:torch.Tensor, z_vals:torch.Tensor)-> torch.Tensor:
@@ -394,12 +398,15 @@ class TestModel(nn.Module):
 
         # Predict density of each sample along each ray. Higher values imply
         # higher likelihood of being absorbed at this point. [n_rays, n_samples]
-        tmp10=raw[..., 3] + noise
-        tmp11=-nn.functional.relu(raw[..., 3] + noise)
-        tmp12=dists_vals
-        tmp2=-nn.functional.relu(raw[..., 3] + noise) * dists_vals
-        tmp3= torch.exp(-nn.functional.relu(raw[..., 3] + noise) * dists_vals)
-        alpha = 1.0 - torch.exp(-nn.functional.relu(raw[..., 3] + noise) * dists_vals)
+        # tmp10=raw[..., 3] + noise
+        # tmp11=-nn.functional.relu(raw[..., 3] + noise)
+        # tmp12=dists_vals
+        # tmp2=nn.functional.relu((raw[..., 3] + noise) * dists_vals)
+        # tmp22=nn.functional.relu(raw[..., 3] + noise) * dists_vals
+        # tmp3= torch.exp(-nn.functional.relu(raw[..., 3] + noise) * dists_vals)
+
+        alpha = 1.0 - torch.exp(-nn.functional.relu((raw[..., 3] + noise )* dists_vals))
+        # alpha_org = 1.0 - torch.exp(-nn.functional.relu(raw[..., 3] + noise )* dists_vals)
         #alpha = -nn.functional.relu(raw[..., 3] + noise) * dists_vals
         #print(alpha.view(-1).min())
         #print(alpha.view(-1).max())
@@ -418,7 +425,7 @@ class TestModel(nn.Module):
 
         #weights=self.get_weights(alpha)
         rgb_map=self.get_rgb_map(alpha,rgb)
-
+        
         return rgb_map
         depth_map = self.get_depth_map(alpha,z_vals)
         acc_map = self.get_acc_map(alpha)
@@ -542,8 +549,8 @@ if __name__ == "__main__":
     focal_x = torch.Tensor(focal).to(device)
     focal_y = torch.Tensor(focal).to(device)
 
-    near, far = 2.0, 5.0
-    distance_to_infinity=1e1
+    near, far = 2.0, 6.0
+    distance_to_infinity=1e2
     n_samples = 32
     perturb = False#True 
     inverse_depth = False
@@ -554,7 +561,7 @@ if __name__ == "__main__":
     }
     n_samples_hierarchical = 0
     kwargs_sample_hierarchical = {"perturb": perturb}
-    chunksize = 2**1
+    chunksize = 2**2
 
     d_input = 3
     n_freqs = 10
@@ -567,10 +574,10 @@ if __name__ == "__main__":
 
     raw_noise_std=0.0
     print_flag=False#True
-    visual_flag=False#True
-    start_vis_height,end_vis_height=42,42+1
-    start_vis_width,end_vis_width=57,57+1
-    eps=0.003
+    visual_flag=True
+    start_vis_height,end_vis_height=50,50+3
+    start_vis_width,end_vis_width=50,50+3
+    eps=0.001
 
     image_lb=np.zeros((total_height,total_width,3))
     image_ub=np.zeros((total_height,total_width,3))
@@ -621,10 +628,11 @@ if __name__ == "__main__":
 
             epoch_start_time=time.time()
 
-            end_height=min(start_height+tile_height,total_height)
-            end_width=min(start_width+tile_width,total_width)
+            end_height=min(start_height+tile_height,end_vis_height)
+            end_width=min(start_width+tile_width,end_vis_width)
 
             print('cur_height,cur_width:',start_height,start_width)
+            #print('end_height,end_width:',end_height,end_width)
             #start_height,start_width=56,56
             #end_height,end_width=60,60
             
@@ -640,13 +648,39 @@ if __name__ == "__main__":
             #ptb = PerturbationLpNorm(norm=np.inf, eps=0.001)
             inputpose_ptb = BoundedTensor(inputpose, ptb)
 
-            lb, ub = model.compute_bounds(x=(inputpose_ptb,), method="backward")
+            lb_ibp, ub_ibp = model.compute_bounds(x=(inputpose_ptb,), method="ibp")
+            reference_interm_bounds = {}
+            for node in model.nodes():
+                if (node.perturbed
+                    and isinstance(node.lower, torch.Tensor)
+                    and isinstance(node.upper, torch.Tensor)):
+                    reference_interm_bounds[node.name] = (node.lower, node.upper)
+            lb, ub = model.compute_bounds(
+                x=(inputpose_ptb,),
+                method="backward",
+                reference_bounds=reference_interm_bounds)
+            
+            # print("lb.shape:",lb.shape)
+            print("Lower bounds: ", lb)
+            print("Upper bounds: ", ub)
 
-            #print("Lower bounds: ", lb)
-            #print("Upper bounds: ", ub)
+            lb=torch.clamp(lb,min=0,max=1)
+            ub=torch.clamp(ub,min=0,max=1)
+            
+            # alpha_lb,alpha_ub=model['/alpha'].lower,model['/alpha'].upper
+            # print('alpha_bound:',torch.min(alpha_lb),torch.max(alpha_ub))
+
+            # lb_back, ub_back = model.compute_bounds(
+            #     x=(inputpose_ptb,),
+            #     method="backward")
+
+            
+            
             # print('bound:',lb.view(-1).min(),ub.view(-1).max())
 
-            #print('bound:',torch.min(lb,dim=0),torch.max(ub,dim=0))
+            #print('bound_ibp:',torch.min(lb_ibp,dim=0),torch.max(ub_ibp,dim=0))
+            # print('bound:',torch.min(lb,dim=0)[0],torch.max(ub,dim=0)[0])
+            #print('bound_back:',torch.min(lb_back,dim=0),torch.max(ub_back,dim=0))
 
 
             # Establish the whole image by composing every tile
