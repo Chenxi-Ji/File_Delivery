@@ -18,7 +18,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # if not os.path.exists('tiny_nerf_data.npz'):
 #   !wget http://cseweb.ucsd.edu/~viscomp/projects/LF/papers/ECCV20/nerf/tiny_nerf_data.npz
 script_dir = os.path.dirname(os.path.realpath(__file__))
-dataname='chair'
+dataname='dozer'
 datapath='data/'+dataname+'_data.npz'
 
 data = np.load(os.path.join(script_dir,datapath))
