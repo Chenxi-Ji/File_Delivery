@@ -50,14 +50,14 @@ def generate_csv(args, relpath=False):
     with open(fname, "w") as out:
         print(f"Generating {fname}")
         if relpath:
-            out.write(f"{os.path.basename(args.output_filename)}.vnnlib\n")
+            out.write(f"specs/{os.path.basename(args.output_filename)}.vnnlib\n")
         else:
-            out.write(f"{os.getcwd()}/{args.output_filename}.vnnlib\n")
+            out.write(f"{os.getcwd()}/specs/{args.output_filename}.vnnlib\n")
     print(f"Done. Now change your verification config file to verify {fname}.")
 
 
 def prepare_input_bounds(image):
-    image = cv2.resize(image, (128, 128))
+    image = cv2.resize(image, (25, 25))
     image = torch.Tensor(image)
     image = image.permute(2, 0, 1).unsqueeze(0)
     return image
@@ -108,7 +108,7 @@ def main():
     upper_limit = upper_limit.tolist()
     state_dim = len(lower_limit)
 
-    fname = f"{args.output_filename}.vnnlib"
+    fname = f"specs/{args.output_filename}.vnnlib"
     with open(fname, "w") as out:
         print(f"Generating {fname} with")
         generate_preamble(out, state_dim, args)
