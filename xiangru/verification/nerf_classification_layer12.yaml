@@ -1,5 +1,5 @@
 general:
-  csv_name: /home/xiangru/Verifier_Development/complete_verifier/nerf/verification/specs/tinydozer_25_0005.csv
+  csv_name: /home/xiangru/Verifier_Development/complete_verifier/nerf/verification/specs/tinydozer_25_0002.csv
 model:
   name: Customized("../nerf_classification_layer12.py", "create_model")
   path: /home/xiangru/Verifier_Development/complete_verifier/nerf/weights/model_layer12_weights_advtrain_25_eps0.03_alpha0.007_iter10.pth
@@ -8,7 +8,7 @@ model:
 attack:
   pgd_order: before
   pgd_restarts: 1000
-  pgd_steps: 10000
+  pgd_steps: 100
 solver:
   auto_enlarge_batch_size: True
   batch_size: 256
@@ -22,6 +22,7 @@ solver:
     full_conv_alpha: False
   prune_after_crown: True
 bab:
+  timeout: 3600
   initial_max_domains: 100
   interm_transfer: False
   branching:

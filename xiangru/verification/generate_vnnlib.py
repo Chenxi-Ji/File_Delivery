@@ -45,21 +45,25 @@ def generate_specs(out, args):
     out.write("))\n\n")
 
 
-def generate_csv(args, relpath=False):
-    fname = args.output_filename + ".csv"
+def generate_csv(args, num_specs):
+    fname = "specs/" + args.output_filename + ".csv"
     with open(fname, "w") as out:
         print(f"Generating {fname}")
-        if relpath:
-            out.write(f"specs/{os.path.basename(args.output_filename)}.vnnlib\n")
-        else:
-            out.write(f"{os.getcwd()}/specs/{args.output_filename}.vnnlib\n")
+        for i in range(num_specs):
+            out.write(f"{os.getcwd()}/specs/{args.output_filename}_{i}.vnnlib\n")
     print(f"Done. Now change your verification config file to verify {fname}.")
 
 
 def prepare_input_bounds(image):
-    image = cv2.resize(image, (25, 25))
-    image = torch.Tensor(image)
-    image = image.permute(2, 0, 1).unsqueeze(0)
+    # image: (H, W, C) or (N, H, W, C)
+    # If image is in batch, assume it doesn't need to be resized.
+    if image.ndim == 4:
+        image = torch.Tensor(image)
+        image = image.permute(0, 3, 1, 2)
+    else:
+        image = cv2.resize(image, (25, 25))
+        image = torch.Tensor(image)
+        image = image.permute(2, 0, 1).unsqueeze(0)
     return image
 
 
@@ -81,12 +85,6 @@ def main():
         help="Path to the bounding box file.",
     )
     parser.add_argument(
-        "-r",
-        "--relative_vnnlib_path",
-        action="store_true",
-        help="When specified, the vnnlib file path in CSV file will be relative to the path of the CSV file.",
-    )
-    parser.add_argument(
         "--num_classes",
         type=int,
         default=5,
@@ -101,20 +99,22 @@ def main():
 
     args = parser.parse_args()
     input_bounds = np.load(args.bound_path)
-    lower_limit = prepare_input_bounds(input_bounds["image_lb"]).flatten()
-    upper_limit = prepare_input_bounds(input_bounds["image_ub"]).flatten()
+    lower_limit = prepare_input_bounds(input_bounds["images_lb"])
+    upper_limit = prepare_input_bounds(input_bounds["images_ub"])
     upper_limit = torch.max(upper_limit, lower_limit)
-    lower_limit = lower_limit.tolist()
-    upper_limit = upper_limit.tolist()
-    state_dim = len(lower_limit)
+    state_dim = lower_limit.reshape(lower_limit.size(0), -1).size(1)
+    num_specs = lower_limit.size(0)
 
-    fname = f"specs/{args.output_filename}.vnnlib"
-    with open(fname, "w") as out:
-        print(f"Generating {fname} with")
-        generate_preamble(out, state_dim, args)
-        generate_limits(out, lower_limit, upper_limit)
-        generate_specs(out, args)
-    generate_csv(args, relpath=args.relative_vnnlib_path)
+    for i in range(num_specs):
+        fname = f"specs/{args.output_filename}_{i}.vnnlib"
+        with open(fname, "w") as out:
+            print(f"Generating {fname}")
+            lower_limit_i = lower_limit[i].reshape(-1).tolist()
+            upper_limit_i = upper_limit[i].reshape(-1).tolist()
+            generate_preamble(out, state_dim, args)
+            generate_limits(out, lower_limit_i, upper_limit_i)
+            generate_specs(out, args)
+    generate_csv(args, num_specs)
 
 
 if __name__ == "__main__":
