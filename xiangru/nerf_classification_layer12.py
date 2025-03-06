@@ -17,7 +17,7 @@ from auto_LiRPA import BoundedModule, BoundedTensor, PerturbationLpNorm
 # Define model, loss, and optimizer
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-IMAGE_SIZE = 25
+IMAGE_SIZE = 50
 
 transform = transforms.Compose([
     transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
@@ -123,7 +123,7 @@ class ImageClassificationModel(nn.Module):
         self.layer1 = BasicBlock(3, 8, stride=2, bn=True, kernel=3)
         self.layer2 = BasicBlock(8, 16, stride=2, bn=True, kernel=3)
         # self.layer3 = BasicBlock(16, 32, stride=2, bn=True, kernel=3)
-        self.fc = nn.Linear(784, 5)  # Output 5 classes
+        self.fc = nn.Linear(2704, 5)  # Output 5 classes
 
     def forward(self, x):
         x = self.layer1(x)

@@ -61,7 +61,7 @@ def prepare_input_bounds(image):
         image = torch.Tensor(image)
         image = image.permute(0, 3, 1, 2)
     else:
-        image = cv2.resize(image, (25, 25))
+        image = cv2.resize(image, (50, 50))
         image = torch.Tensor(image)
         image = image.permute(2, 0, 1).unsqueeze(0)
     return image

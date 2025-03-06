@@ -773,10 +773,9 @@ if __name__ == "__main__":
     d_filter = 128
     
     n_iters=100000
-    chunksize = 2**3
-    angle_start,angle_end=0.0, 0.002
-    eps=0.001
-    angle_step=0.001
+    chunksize = 2**4
+    eps=angle_step=0.002
+    angle_start,angle_end=0.0, angle_step*2#0.0002
     # cur_angle=angle=0.2
 
     testimgidx = 13
@@ -784,8 +783,7 @@ if __name__ == "__main__":
     bound_method='crown'
     bound_whole_flag=True#False#
     xdown_factor,ydown_factor=4,4
-    tile_height,tile_width=3, 3
-
+    tile_height,tile_width=50, 50
     images_lb=[]
     images_ub=[]
     images_noptb=[]
@@ -970,7 +968,7 @@ if __name__ == "__main__":
                 backward_start_time = time.time()
                 lb, ub = model.compute_bounds(
                     x=(inputpose_ptb, directions),
-                    method="forward",
+                    method="forward+backward",
                     reference_bounds=reference_interm_bounds)
                 # # Use the forward mode to compute the rest of the computation graph
                 # lirpa_rgb_model = BoundedModule(rgb_model, torch.rand((1, n_samples, 4), device=device))

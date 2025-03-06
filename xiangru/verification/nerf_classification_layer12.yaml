@@ -1,10 +1,10 @@
 general:
-  csv_name: /home/xiangru/Verifier_Development/complete_verifier/nerf/verification/specs/tinydozer_25_0002.csv
+  csv_name: /home/xiangru/Verifier_Development/complete_verifier/nerf/verification/specs/tinydozer_50.csv
 model:
   name: Customized("../nerf_classification_layer12.py", "create_model")
-  path: /home/xiangru/Verifier_Development/complete_verifier/nerf/weights/model_layer12_weights_advtrain_25_eps0.03_alpha0.007_iter10.pth
+  path: /home/xiangru/Verifier_Development/complete_verifier/nerf/weights/model_layer12_weights_advtrain_50_eps0.03_alpha0.007_iter10.pth
   onnx_optimization_flags: ["merge_bn"]
-  input_shape: [-1, 3, 25, 25]
+  input_shape: [-1, 3, 50, 50]
 attack:
   pgd_order: before
   pgd_restarts: 1000
