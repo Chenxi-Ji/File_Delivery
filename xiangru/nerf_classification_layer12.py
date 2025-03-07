@@ -11,6 +11,7 @@ import cv2
 from collections import defaultdict
 import re
 import matplotlib.pyplot as plt
+import argparse
 
 from auto_LiRPA import BoundedModule, BoundedTensor, PerturbationLpNorm
 
@@ -23,27 +24,38 @@ transform = transforms.Compose([
     transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
     transforms.RandomRotation(30),
     transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2),
-    transforms.RandomHorizontalFlip(),
+    # transforms.RandomHorizontalFlip(),
     transforms.GaussianBlur(3, sigma=(0.1, 2.0)),
     transforms.ToTensor(),
 ])
 
 class CustomImageDataset(Dataset):
-    def __init__(self, data_folder, data_file, transform=None):
+    def __init__(self, data_folder, data_file, transform=None, exclude_yaw=None):
         self.data_folder = data_folder
         self.data_file = data_file
         self.transform = transform
         self.data = []
         self.labels = []
-        self.load_data()
+        self.load_data(exclude_yaw)
 
-    def load_data(self):
+    def load_data(self, exclude_yaw=None):
         for idx, data_file in enumerate(self.data_file):
             full_path = os.path.join(self.data_folder, data_file)
             data = np.load(full_path)
             images = data["images"]
+            len_ori = images.shape[0]
             labels = np.full(images.shape[0], idx)
-
+            if exclude_yaw is not None:
+                poses = data["poses"]
+                xyzrpy = extrinsic_matrix_to_xyzrpy(poses)
+                yaw = xyzrpy[5]
+                for interval in exclude_yaw:
+                    mask = ~np.logical_and(yaw > interval[0], yaw < interval[1])
+                    images = images[mask]
+                    labels = labels[mask]
+                    yaw = yaw[mask]
+            print(f"Trained yaw portion: {images.shape[0] / len_ori}")
+            
             images_resized = []
             for img in images:
                 img = img * 255
@@ -66,6 +78,22 @@ class CustomImageDataset(Dataset):
         if self.transform:
             image = self.transform(image)
         return image, label
+
+def extrinsic_matrix_to_xyzrpy(T):
+    x, y, z = T[:, 0, 3], T[:, 1, 3], T[:, 2, 3]
+    R = T[:, :3, :3]
+
+    def rotation_matrix_to_rpy(R):
+        pitch = -np.arcsin(R[:, 2, 0])
+        roll = np.zeros_like(pitch)
+        yaw = np.arctan2(-R[:, 0, 1], R[:, 1, 1])
+        mask = np.abs(np.cos(pitch)) > np.finfo(float).eps
+        roll[mask] = np.arctan2(R[:, 2, 1], R[:, 2, 2])
+        yaw[mask] = np.arctan2(R[:, 1, 0], R[:, 0, 0])
+        return roll, pitch, yaw
+
+    roll, pitch, yaw = rotation_matrix_to_rpy(R)
+    return np.array([x, y, z, roll, pitch, yaw])
 
 class BasicBlock(nn.Module):
     expansion = 1
@@ -454,17 +482,24 @@ def predict_images(images, classidx, weights_path):
     with torch.no_grad():
         outputs = model(images)
     _, results = outputs.max(dim=1)
+    acc = torch.sum(results == classidx) / images.shape[0]
+    print(f"acc: {acc}")
     return results
         
 
 
 
 if __name__ == '__main__':
-    choice = 'predict_images'
+    parser = argparse.ArgumentParser()
+    parser.add_argument("choice", type=str)
+    args = parser.parse_args()
+    choice = args.choice
 
     epsilon=0.03    # maximum perturbation
     alpha=0.007     # step size for each PGD iteration
     num_iter=10     # number of PGD iterations
+
+    exclude_yaw = ((-100, 1.4), (1.7, 100))
 
     # Path to data folder and data
     data_folder = './data/'
@@ -474,7 +509,10 @@ if __name__ == '__main__':
     weights_filename = f'model_layer12_weights_{IMAGE_SIZE}.pth'
     if choice == 'advtrain' or choice == 'predict_images':
         weights_filename = f'model_layer12_weights_advtrain_{IMAGE_SIZE}_eps{epsilon}_alpha{alpha}_iter{num_iter}.pth'
+    if exclude_yaw is not None:
+        weights_filename = weights_filename[:-4] + f'_exclude_yaw.pth'
     weights_path = os.path.join(weight_folder, weights_filename)
+    print(f"weights_path: {weights_path}")
 
     model = ImageClassificationModel().to(device)
     criterion = nn.CrossEntropyLoss()
@@ -484,7 +522,7 @@ if __name__ == '__main__':
 
     if choice == 'train':
         # Create dataset and dataloader
-        dataset = CustomImageDataset(data_folder, data_file, transform=transform)
+        dataset = CustomImageDataset(data_folder, data_file, transform=transform, exclude_yaw=exclude_yaw)
         train_size = int(0.8 * len(dataset))
         test_size = len(dataset) - train_size
         train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
@@ -497,7 +535,7 @@ if __name__ == '__main__':
     
     elif choice == 'advtrain':
         # Create dataset and dataloader
-        dataset = CustomImageDataset(data_folder, data_file, transform=transform)
+        dataset = CustomImageDataset(data_folder, data_file, transform=transform, exclude_yaw=exclude_yaw)
         train_size = int(0.8 * len(dataset))
         test_size = len(dataset) - train_size
         train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
@@ -523,5 +561,26 @@ if __name__ == '__main__':
     elif choice == 'predict_images':
         inputs = np.load('verification/predicted_images_10000.npz')
         images = prepare_input_bounds(inputs["images"]).to(device)
+        poses = inputs["poses"]
         classidx = 1
-        predict_images(images, classidx, weights_path)
+        results = predict_images(images, classidx, weights_path).cpu()
+        xyzrpy = extrinsic_matrix_to_xyzrpy(poses)
+        all_yaw = xyzrpy[5]
+        mask_correct = results == classidx
+        yaw_correct = all_yaw[mask_correct]
+        yaw_incorrect = all_yaw[~mask_correct]
+        
+        fix, ax = plt.subplots(subplot_kw={'projection': 'polar'})
+        ax.set_theta_offset(np.pi/2)
+        ax.set_theta_direction(-1)
+        # fix, ax = plt.subplots()
+        ax.scatter(yaw_correct, np.ones_like(yaw_correct), color='green', s=100, label='correct')
+        ax.scatter(yaw_incorrect, np.ones_like(yaw_incorrect), color='red', s=100, label='incorrect')
+        ax.set_thetamin(-180)
+        ax.set_thetamax(180)
+        ax.set_xticks(np.radians([-180, -90, 0, 90, 180]))
+        ax.set_xticklabels([r'$-\pi$', r'$-\frac{\pi}{2}$', '0', r'$\frac{\pi}{2}$', r'$\pi$'])
+        ax.set_yticklabels([])
+        ax.legend()
+        plt.show()
+        plt.savefig('rotation_classification.png')
