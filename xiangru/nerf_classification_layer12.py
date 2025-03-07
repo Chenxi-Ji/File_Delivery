@@ -129,7 +129,7 @@ class ImageClassificationModel(nn.Module):
         x = self.layer1(x)
         x = self.layer2(x)
         # x = self.layer3(x)
-        x = x.view(x.size(0), -1)
+        x = x.reshape(x.size(0), -1)
         #print(x.shape)
         x = self.fc(x)
         return x
@@ -435,9 +435,32 @@ def parse_cex(cex_file):
         y[i] = y_dict[i]
     return x, y
 
+def prepare_input_bounds(image):
+    # image: (H, W, C) or (N, H, W, C)
+    # If image is in batch, assume it doesn't need to be resized.
+    if image.ndim == 4:
+        image = torch.Tensor(image)
+        image = image.permute(0, 3, 1, 2)
+    else:
+        image = cv2.resize(image, (50, 50))
+        image = torch.Tensor(image)
+        image = image.permute(2, 0, 1).unsqueeze(0)
+    return image
+
+def predict_images(images, classidx, weights_path):
+    model = ImageClassificationModel().to(device)
+    model.load_state_dict(torch.load(weights_path))  # Load model weights
+    model.eval()
+    with torch.no_grad():
+        outputs = model(images)
+    _, results = outputs.max(dim=1)
+    return results
+        
+
+
 
 if __name__ == '__main__':
-    choice = 'advtrain'
+    choice = 'predict_images'
 
     epsilon=0.03    # maximum perturbation
     alpha=0.007     # step size for each PGD iteration
@@ -449,7 +472,7 @@ if __name__ == '__main__':
     categories = ['chair', 'lego', 'ficus', 'hotdog', 'mic']
     weight_folder = './weights/'
     weights_filename = f'model_layer12_weights_{IMAGE_SIZE}.pth'
-    if choice == 'advtrain':
+    if choice == 'advtrain' or choice == 'predict_images':
         weights_filename = f'model_layer12_weights_advtrain_{IMAGE_SIZE}_eps{epsilon}_alpha{alpha}_iter{num_iter}.pth'
     weights_path = os.path.join(weight_folder, weights_filename)
 
@@ -496,3 +519,9 @@ if __name__ == '__main__':
         dataname = 'chair'  # Use one of ['chair', 'lego', 'ficus', 'hotdog', 'mic']
         image_idx = 0  # Specify the image index to predict (e.g., 0)
         bound(data_folder, dataname, image_idx, weights_path)
+    
+    elif choice == 'predict_images':
+        inputs = np.load('verification/predicted_images_10000.npz')
+        images = prepare_input_bounds(inputs["images"]).to(device)
+        classidx = 1
+        predict_images(images, classidx, weights_path)

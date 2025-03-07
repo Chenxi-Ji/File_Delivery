@@ -491,7 +491,7 @@ class TestModel(nn.Module):
             tmp = alpha_rgb[:, i, :] + one_minus_alpha[:, i:i+1] * tmp
             # Use ReLU to clamp the value
             # tmp = 1 - torch.relu(1 - tmp)
-            #tmp=torch.relu(tmp)
+            # tmp=torch.relu(tmp)
         return tmp
 
     # def get_rgb_map(self,alpha:torch.Tensor, rgb:torch.Tensor)-> torch.Tensor:
@@ -581,6 +581,10 @@ class TestModel(nn.Module):
         # tmp2=nn.functional.relu((raw[..., 3] + noise) * dists_vals)
         # tmp22=nn.functional.relu(raw[..., 3] + noise) * dists_vals
         # tmp3= torch.exp(-nn.functional.relu(raw[..., 3] + noise) * dists_vals)
+
+        tmp1=-nn.functional.relu((raw[..., 3] + noise )* dists_vals)
+
+        tmp2=torch.exp(tmp1)
 
         alpha = 1.0 - torch.exp(-nn.functional.relu((raw[..., 3] + noise )* dists_vals))
         # alpha_org = 1.0 - torch.exp(-nn.functional.relu(raw[..., 3] + noise )* dists_vals)
@@ -768,22 +772,24 @@ if __name__ == "__main__":
     start_time=time.time()
 
     dataname='tinydozer'
-    n_samples = 32
+    n_samples = 64
     n_layers = 2
     d_filter = 128
     
     n_iters=100000
     chunksize = 2**4
-    eps=angle_step=0.002
+    eps=angle_step=0.00010
     angle_start,angle_end=0.0, angle_step*2#0.0002
+    
     # cur_angle=angle=0.2
 
     testimgidx = 13
     visual_flag=True#False#
-    bound_method='crown'
+    bound_method='forward'
     bound_whole_flag=True#False#
     xdown_factor,ydown_factor=4,4
-    tile_height,tile_width=50, 50
+    tile_height,tile_width=15, 15
+
     images_lb=[]
     images_ub=[]
     images_noptb=[]
@@ -903,7 +909,7 @@ if __name__ == "__main__":
     # rgb_model.to(device)
     
     
-    for cur_angle in np.arange(angle_start,angle_end,angle_step*2):
+    for cur_angle in tqdm(np.arange(angle_start,angle_end,angle_step*2), desc="Outer loop"):
         cur_angle=float(cur_angle)
         print('cur_angle:',cur_angle)
 
@@ -914,8 +920,8 @@ if __name__ == "__main__":
         image_ub=np.zeros((total_height,total_width,3))
         image_noptb=np.zeros((total_height,total_width,3))
     
-        for start_height in tqdm(range(start_vis_height,end_vis_height,tile_height), desc="Outer loop"):
-            for start_width in tqdm(range(start_vis_width,end_vis_width,tile_width), desc="Inner loop", leave=False):
+        for start_height in tqdm(range(start_vis_height,end_vis_height,tile_height), desc="Inner loop", leave=False):
+            for start_width in range(start_vis_width,end_vis_width,tile_width):
 
                 epoch_start_time=time.time()
 
@@ -1082,8 +1088,3 @@ if __name__ == "__main__":
             plt.savefig("output_img/"+imagename, bbox_inches='tight')
 
         plt.show()
-
-    
-
-
-    

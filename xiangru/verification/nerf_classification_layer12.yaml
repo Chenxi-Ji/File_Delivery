@@ -6,7 +6,7 @@ model:
   onnx_optimization_flags: ["merge_bn"]
   input_shape: [-1, 3, 50, 50]
 attack:
-  pgd_order: before
+  pgd_order: skip
   pgd_restarts: 1000
   pgd_steps: 100
 solver:
