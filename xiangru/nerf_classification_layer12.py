@@ -24,7 +24,7 @@ transform = transforms.Compose([
     transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
     transforms.RandomRotation(30),
     transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2),
-    # transforms.RandomHorizontalFlip(),
+    transforms.RandomHorizontalFlip(),
     transforms.GaussianBlur(3, sigma=(0.1, 2.0)),
     transforms.ToTensor(),
 ])
@@ -499,7 +499,7 @@ if __name__ == '__main__':
     alpha=0.007     # step size for each PGD iteration
     num_iter=10     # number of PGD iterations
 
-    exclude_yaw = ((-100, 1.4), (1.7, 100))
+    exclude_yaw = None
 
     # Path to data folder and data
     data_folder = './data/'

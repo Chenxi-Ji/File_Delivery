@@ -6,6 +6,7 @@ import argparse
 import numpy as np
 import torch
 import cv2
+import shutil
 
 
 def generate_preamble(out, state_dim, args):
@@ -46,11 +47,12 @@ def generate_specs(out, args):
 
 
 def generate_csv(args, num_specs):
-    fname = "specs/" + args.output_filename + ".csv"
+    # fname = "specs/" + args.output_filename + ".csv"
+    fname = "specs/tinydozer_batch.csv"
     with open(fname, "w") as out:
         print(f"Generating {fname}")
         for i in range(num_specs):
-            out.write(f"{os.getcwd()}/specs/{args.output_filename}_{i}.vnnlib\n")
+            out.write(f"{os.getcwd()}/specs/{args.output_filename}/{args.output_filename}_{i}.vnnlib\n")
     print(f"Done. Now change your verification config file to verify {fname}.")
 
 
@@ -105,8 +107,12 @@ def main():
     state_dim = lower_limit.reshape(lower_limit.size(0), -1).size(1)
     num_specs = lower_limit.size(0)
 
+    if os.path.exists(f"specs/{args.output_filename}"):
+        shutil.rmtree(f"specs/{args.output_filename}")
+    os.mkdir(f"specs/{args.output_filename}")
+
     for i in range(num_specs):
-        fname = f"specs/{args.output_filename}_{i}.vnnlib"
+        fname = f"specs/{args.output_filename}/{args.output_filename}_{i}.vnnlib"
         with open(fname, "w") as out:
             print(f"Generating {fname}")
             lower_limit_i = lower_limit[i].reshape(-1).tolist()
