@@ -225,7 +225,8 @@ def adversarial_train_model(model,
                             num_epochs=100,
                             epsilon=0.03,    # maximum perturbation
                             alpha=0.007,     # step size for each PGD iteration
-                            num_iter=10):    # number of PGD iterations
+                            num_iter=10,
+                            l1_lambda=0):    # number of PGD iterations
     """
     Adversarial training loop using a PGD attack.
     Trains on both clean and adversarial images in each batch.
@@ -254,6 +255,10 @@ def adversarial_train_model(model,
             optimizer.zero_grad()
             outputs = model(combined_images)
             loss = criterion(outputs, combined_labels)
+
+            l1_norm = sum(p.abs().sum() for p in model.parameters())
+            loss += l1_lambda * l1_norm
+
             loss.backward()
             optimizer.step()
 
@@ -343,7 +348,7 @@ def predict(data_folder, dataname, image_idx, weights_path):
     upper = prepare_input_bounds(input_bounds['image_ub']).to(device)
     image_noptb = prepare_input_bounds(input_bounds['image_noptb']).to(device)
 
-    cex_x, cex_y = parse_cex(f'../tinydozer_{IMAGE_SIZE}_0005.cex')
+    cex_x, cex_y = parse_cex(f'../tinydozer_{IMAGE_SIZE}_0307.cex')
     image_cex = torch.Tensor(cex_x).to(lower)
     image_cex = image_cex.reshape(1, 3, IMAGE_SIZE, IMAGE_SIZE)
 
@@ -361,7 +366,7 @@ def predict(data_folder, dataname, image_idx, weights_path):
     axes[3].imshow(image_toshow)
     axes[3].set_title("Cex")
     plt.show()
-    plt.savefig(f'tinydozer_{IMAGE_SIZE}_0005.png')
+    plt.savefig(f'tinydozer_{IMAGE_SIZE}_nocex.png')
 
     # Select the image at the specified index
     testimg = images[image_idx]
@@ -425,11 +430,16 @@ def bound(data_folder, dataname, image_idx, weights_path):
 
 
 def prepare_input_bounds(image):
-    image = cv2.resize(image, (IMAGE_SIZE, IMAGE_SIZE))
-    image = torch.Tensor(image)
-    image = image.permute(2, 0, 1).unsqueeze(0)
+    # image: (H, W, C) or (N, H, W, C)
+    # If image is in batch, assume it doesn't need to be resized.
+    if image.ndim == 4:
+        image = torch.Tensor(image)
+        image = image.permute(0, 3, 1, 2)
+    else:
+        image = cv2.resize(image, (50, 50))
+        image = torch.Tensor(image)
+        image = image.permute(2, 0, 1).unsqueeze(0)
     return image
-
 
 def parse_cex(cex_file):
     """Parse the saved counter example file."""
@@ -499,6 +509,7 @@ if __name__ == '__main__':
     alpha=0.007     # step size for each PGD iteration
     num_iter=10     # number of PGD iterations
 
+    # exclude_yaw = ((-10, 0.288), (0.388, 10))
     exclude_yaw = None
 
     # Path to data folder and data
@@ -507,10 +518,10 @@ if __name__ == '__main__':
     categories = ['chair', 'lego', 'ficus', 'hotdog', 'mic']
     weight_folder = './weights/'
     weights_filename = f'model_layer12_weights_{IMAGE_SIZE}.pth'
-    if choice == 'advtrain' or choice == 'predict_images':
+    if choice == 'advtrain' or choice == 'predict_images' or True:
         weights_filename = f'model_layer12_weights_advtrain_{IMAGE_SIZE}_eps{epsilon}_alpha{alpha}_iter{num_iter}.pth'
     if exclude_yaw is not None:
-        weights_filename = weights_filename[:-4] + f'_exclude_yaw.pth'
+        weights_filename = weights_filename[:-4] + f'_exclude_yaw_0.288_0.388_l1reg.pth'
     weights_path = os.path.join(weight_folder, weights_filename)
     print(f"weights_path: {weights_path}")
 
@@ -518,7 +529,7 @@ if __name__ == '__main__':
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001)
 
-    num_epochs=50
+    num_epochs=20
 
     if choice == 'train':
         # Create dataset and dataloader
