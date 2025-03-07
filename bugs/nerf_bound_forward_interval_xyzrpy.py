@@ -15,6 +15,8 @@ import cv2
 import onnx
 import itertools
 
+torch.set_default_dtype(torch.float64)
+
 # import warnings
 
 # warnings.filterwarnings("ignore")
@@ -320,16 +322,6 @@ class TestModel(nn.Module):
             pitch=self.pitch*torch.ones_like(input).to(input.device)
             yaw=input
 
-            if self.input_type=="x":
-                x=input
-            elif self.input_type=="y":
-                y=input
-            elif self.input_type=="z":
-                z=input
-            elif self.input_type=="roll":
-                roll=input
-            elif self.input_type=="yaw":
-                yaw=input
 
             
         elif self.input_type=="ry":
@@ -341,6 +333,7 @@ class TestModel(nn.Module):
             pitch=self.pitch*torch.ones_like(input[..., 0:1]).to(input.device)
             yaw=input[..., 1:2]
 
+
         elif self.input_type=="xyz":
             x=input[..., 0:1]
             y=input[..., 1:2]
@@ -349,6 +342,8 @@ class TestModel(nn.Module):
             roll=self.roll*torch.ones_like(input[..., 0:1]).to(input.device)
             pitch=self.pitch*torch.ones_like(input[..., 0:1]).to(input.device)
             yaw=self.yaw*torch.ones_like(input[..., 0:1]).to(input.device)
+
+            
 
         elif self.input_type=="xyzry":
             x=input[..., 0:1]
@@ -359,7 +354,13 @@ class TestModel(nn.Module):
             pitch=self.pitch*torch.ones_like(input[..., 0:1]).to(input.device)
             yaw=input[..., 4:5]
 
+            hue=self.hue*torch.ones_like(input).to(input.device)
+            satur=self.satur*torch.ones_like(input).to(input.device)
+
+        
+
         positions_xyzrpy = torch.cat([x, y, z, roll, pitch, yaw], dim=-1)
+        
         return positions_xyzrpy
 
     def get_rays(
@@ -770,7 +771,7 @@ def extrinsic_matrix_to_xyzrpy(T):
     roll, pitch, yaw = rotation_matrix_to_rpy(R)
     return np.array([x, y, z, roll, pitch, yaw])
 
-def compute_image_bound(ray_model,input,input_type,xyz_step,ry_step,dummy_inputpos,\
+def compute_image_bound(ray_model,input,input_type,xyz_step,ry_step,\
                         start_vis_height,end_vis_height,tile_height,start_vis_width,end_vis_width,tile_width,\
                         print_flag,visual_flag,device):
     image_lb=np.zeros((total_height,total_width,3))
@@ -783,6 +784,15 @@ def compute_image_bound(ray_model,input,input_type,xyz_step,ry_step,dummy_inputp
 
             end_height=min(start_height+tile_height,end_vis_height)
             end_width=min(start_width+tile_width,end_vis_width)
+
+            if input_type=="x" or input_type=="y" or input_type=="z" or input_type=="roll" or input_type=="yaw":
+                dummy_inputpos = BoundedTensor(torch.rand(((end_height-start_height)*(end_width-start_width), 1), device=device))
+            elif input_type=="ry":
+                dummy_inputpos = BoundedTensor(torch.rand(((end_height-start_height)*(end_width-start_width), 2), device=device))
+            elif input_type=="xyz":
+                dummy_inputpos = BoundedTensor(torch.rand(((end_height-start_height)*(end_width-start_width), 3), device=device))
+            elif input_type=="xyzry":
+                dummy_inputpos = BoundedTensor(torch.rand(((end_height-start_height)*(end_width-start_width), 5), device=device))
 
             if print_flag:
                 print('\n cur_height,cur_width:',start_height,start_width)
@@ -811,7 +821,7 @@ def compute_image_bound(ray_model,input,input_type,xyz_step,ry_step,dummy_inputp
             
             inputpose_ptb = BoundedTensor(inputpose, ptb)
             model = BoundedModule(ray_model, (dummy_inputpos, directions))
-            model.visualize('model_viewer')
+            # model.visualize('model_viewer')
 
             # print("computing ibp and crown")
             if print_flag:
@@ -873,8 +883,8 @@ if __name__ == "__main__":
     
     n_iters=100000
     chunksize = 2**5
-    xyz_step,ry_step=0.0002,0.00010
-    xyz_eps,ry_eps=xyz_step*10,ry_step*3
+    xyz_step,ry_step=0.003,0.00010
+    xyz_eps,ry_eps=xyz_step*1,ry_step*3
     input_type="x"
 
     testimgidx = 13
@@ -986,15 +996,6 @@ if __name__ == "__main__":
     fine_model.to(device)
 
 
-    if input_type=="x" or input_type=="y" or input_type=="z" or input_type=="roll" or input_type=="yaw":
-        dummy_inputpos = BoundedTensor(torch.rand((1, 1), device=device))
-    elif input_type=="ry":
-        dummy_inputpos = BoundedTensor(torch.rand((1, 2), device=device))
-    elif input_type=="xyz":
-        dummy_inputpos = BoundedTensor(torch.rand((1, 3), device=device))
-    elif input_type=="xyzry":
-        dummy_inputpos = BoundedTensor(torch.rand((1, 5), device=device))
-
     ray_model=TestModel(input_type,total_height,total_width,None,None,None,None,focal_x,focal_y,\
                         xyzrpy_np,near,far,distance_to_infinity,n_samples,perturb,inverse_depth,\
                         kwargs_sample_stratified,n_samples_hierarchical,kwargs_sample_hierarchical,chunksize,\
@@ -1005,61 +1006,23 @@ if __name__ == "__main__":
     # torch.onnx.export(ray_model,(dummy_inputpos,h_w),'onnx_net.onnx')
     
     
-    x_start, x_end, x_step = xyzrpy_np[0], xyzrpy_np[0]+xyz_eps, xyz_step*2
-    y_start, y_end, y_step = xyzrpy_np[1], xyzrpy_np[1]+xyz_eps, xyz_step*2
-    z_start, z_end, z_step = xyzrpy_np[2], xyzrpy_np[2]+xyz_eps, xyz_step*2
+    x_start, x_end, x_step = xyzrpy_np[0], xyzrpy_np[0]+xyz_eps, xyz_step
+    y_start, y_end, y_step = xyzrpy_np[1], xyzrpy_np[1]+xyz_eps, xyz_step
+    z_start, z_end, z_step = xyzrpy_np[2], xyzrpy_np[2]+xyz_eps, xyz_step
 
-    roll_start, roll_end, roll_step = xyzrpy_np[3], xyzrpy_np[3]+ry_eps, ry_step*2
-    pitch_start, pitch_end, pitch_step = xyzrpy_np[4], xyzrpy_np[4]+ry_eps, ry_step*2
-    yaw_start, yaw_end, yaw_step = xyzrpy_np[5], xyzrpy_np[5]+ry_eps, ry_step*2
-
-
-    x_vals = np.arange(x_start, x_end, x_step)
-    y_vals = np.arange(y_start, y_end, y_step)
-    z_vals = np.arange(z_start, z_end, z_step)
-
-    roll_vals = np.arange(roll_start, roll_end, roll_step)
-    pitch_vals = np.arange(pitch_start, pitch_end, pitch_step)
-    yaw_vals = np.arange(yaw_start, yaw_end, yaw_step)
+    roll_start, roll_end, roll_step = xyzrpy_np[3], xyzrpy_np[3]+ry_eps, ry_step
+    pitch_start, pitch_end, pitch_step = xyzrpy_np[4], xyzrpy_np[4]+ry_eps, ry_step
+    yaw_start, yaw_end, yaw_step = xyzrpy_np[5], xyzrpy_np[5]+ry_eps, ry_step
 
 
+    x_vals = np.arange(x_start, x_end, x_step*2)
+    y_vals = np.arange(y_start, y_end, y_step*2)
+    z_vals = np.arange(z_start, z_end, z_step*2)
 
-    # if input_type=="x":
-    #     for cur_x in tqdm(x_vals):
-    #         cur_x=float(cur_x)
-    #         input=torch.tensor([cur_x]).to(device)
+    roll_vals = np.arange(roll_start, roll_end, roll_step*2)
+    pitch_vals = np.arange(pitch_start, pitch_end, pitch_step*2)
+    yaw_vals = np.arange(yaw_start, yaw_end, yaw_step*2)
 
-    #         image_lb,image_ub,image_noptb=compute_image_bound(ray_model,input,input_type,xyz_step,ry_step,dummy_inputpos,\
-    #                             start_vis_height,end_vis_height,tile_height,start_vis_width,end_vis_width,tile_width,\
-    #                             print_flag,visual_flag,device)
-
-    #         images_lb.append(image_lb)
-    #         images_ub.append(image_ub)
-    #         images_noptb.append(image_noptb)
-    # elif input_type=="y":
-    #     for cur_y in tqdm(y_vals):
-    #         cur_y=float(cur_y)
-    #         input=torch.tensor([cur_y]).to(device)
-
-    #         image_lb,image_ub,image_noptb=compute_image_bound(ray_model,input,input_type,xyz_step,ry_step,dummy_inputpos,\
-    #                             start_vis_height,end_vis_height,tile_height,start_vis_width,end_vis_width,tile_width,\
-    #                             print_flag,visual_flag,device)
-
-    #         images_lb.append(image_lb)
-    #         images_ub.append(image_ub)
-    #         images_noptb.append(image_noptb)
-    # elif input_type=="z":
-    #     for cur_z in tqdm(z_vals):
-    #         cur_z=float(cur_z)
-    #         input=torch.tensor([cur_z]).to(device)
-
-    #         image_lb,image_ub,image_noptb=compute_image_bound(ray_model,input,input_type,xyz_step,ry_step,dummy_inputpos,\
-    #                             start_vis_height,end_vis_height,tile_height,start_vis_width,end_vis_width,tile_width,\
-    #                             print_flag,visual_flag,device)
-
-    #         images_lb.append(image_lb)
-    #         images_ub.append(image_ub)
-    #         images_noptb.append(image_noptb)
     if input_type in ["x", "y", "z","roll", "yaw"]:
         vals = {"x": x_vals, "y": y_vals, "z": z_vals, "roll":roll_vals, "yaw":yaw_vals}[input_type]  # Select the corresponding value list
         for cur_val in tqdm(vals):
@@ -1067,43 +1030,20 @@ if __name__ == "__main__":
             input_tensor = torch.tensor([cur_val]).to(device)
 
             image_lb, image_ub, image_noptb = compute_image_bound(ray_model, input_tensor, input_type, xyz_step, ry_step,
-                                                                dummy_inputpos, start_vis_height, end_vis_height, tile_height,
+                                                                start_vis_height, end_vis_height, tile_height,
                                                                 start_vis_width, end_vis_width, tile_width, print_flag,
                                                                 visual_flag, device)
 
             images_lb.append(image_lb)
             images_ub.append(image_ub)
             images_noptb.append(image_noptb)
-    # elif input_type=="roll":
-    #     for cur_roll in tqdm(roll_vals):
-    #         cur_roll=float(cur_roll)
-    #         input=torch.tensor([cur_roll]).to(device)
-
-    #         image_lb,image_ub,image_noptb=compute_image_bound(ray_model,input,input_type,xyz_step,ry_step,dummy_inputpos,\
-    #                             start_vis_height,end_vis_height,tile_height,start_vis_width,end_vis_width,tile_width,\
-    #                             print_flag,visual_flag,device)
-
-    #         images_lb.append(image_lb)
-    #         images_ub.append(image_ub)
-    #         images_noptb.append(image_noptb)
-    # elif input_type=="yaw":
-    #     for cur_yaw in tqdm(yaw_vals):
-    #         cur_yaw=float(cur_yaw)
-    #         input=torch.tensor([cur_yaw]).to(device)
-
-    #         image_lb,image_ub,image_noptb=compute_image_bound(ray_model,input,input_type,xyz_step,ry_step,dummy_inputpos,\
-    #                             start_vis_height,end_vis_height,tile_height,start_vis_width,end_vis_width,tile_width,\
-    #                             print_flag,visual_flag,device)
-
-    #         images_lb.append(image_lb)
-    #         images_ub.append(image_ub)
-    #         images_noptb.append(image_noptb)
+ 
     elif input_type=="ry":
         for cur_roll, cur_yaw in tqdm(itertools.product(roll_vals, yaw_vals)):
             cur_roll,cur_yaw=float(cur_roll),float(cur_yaw)
             input=torch.tensor([cur_roll,cur_yaw]).to(device)
 
-            image_lb,image_ub,image_noptb=compute_image_bound(ray_model,input,input_type,xyz_step,ry_step,dummy_inputpos,\
+            image_lb,image_ub,image_noptb=compute_image_bound(ray_model,input,input_type,xyz_step,ry_step,\
                                 start_vis_height,end_vis_height,tile_height,start_vis_width,end_vis_width,tile_width,\
                                 print_flag,visual_flag,device)
 
@@ -1116,7 +1056,7 @@ if __name__ == "__main__":
             cur_x, cur_y, cur_z=float(cur_x), float(cur_y), float(cur_z)
             input=torch.tensor([cur_x, cur_y, cur_z]).to(device)
 
-            image_lb,image_ub,image_noptb=compute_image_bound(ray_model,input,input_type,xyz_step,ry_step,dummy_inputpos,\
+            image_lb,image_ub,image_noptb=compute_image_bound(ray_model,input,input_type,xyz_step,ry_step,\
                                 start_vis_height,end_vis_height,tile_height,start_vis_width,end_vis_width,tile_width,\
                                 print_flag,visual_flag,device)
 
@@ -1130,7 +1070,7 @@ if __name__ == "__main__":
             cur_roll,cur_yaw=float(cur_roll),float(cur_yaw)
             input=torch.tensor([cur_x, cur_y, cur_z, cur_roll,cur_yaw]).to(device)
             
-            image_lb,image_ub,image_noptb=compute_image_bound(ray_model,input,input_type,xyz_step,ry_step,dummy_inputpos,\
+            image_lb,image_ub,image_noptb=compute_image_bound(ray_model,input,input_type,xyz_step,ry_step,\
                                 start_vis_height,end_vis_height,tile_height,start_vis_width,end_vis_width,tile_width,\
                                 print_flag,visual_flag,device)
 
